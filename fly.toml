@@ -16,3 +16,11 @@ kill_timeout = 5
   [[services.ports]]
     handlers = ["tls", "http"]
     port = 443
+
+[[services]]
+  internal_port = 5060
+  protocol = "udp"
+
+  [[services.ports]]
+    port = 5060
+    handlers = ["udp"]
