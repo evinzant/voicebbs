@@ -1,0 +1,14 @@
+{
+    "name": "Rust Dev Environment",
+    "image": "mcr.microsoft.com/devcontainers/rust:0-1.75",
+    "features": {},
+    "customizations": {
+      "vscode": {
+        "settings": {},
+        "extensions": [
+          "rust-lang.rust-analyzer",
+          "vadimcn.vscode-lldb"
+        ]
+      }
+    }
+  }
