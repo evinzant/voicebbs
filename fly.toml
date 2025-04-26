@@ -1,12 +1,5 @@
 app = "voicebbs"
 
-[build]
-  builder = "paketobuildpacks/builder:base"
-  buildpacks = ["paketo-buildpacks/rust"]
-
-[[processes]]
-  processes = ["./voicebbs"]
-
 kill_signal = "SIGINT"
 kill_timeout = 5
 
