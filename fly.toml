@@ -4,6 +4,9 @@ app = "voicebbs"
   builder = "paketobuildpacks/builder:base"
   buildpacks = ["paketo-buildpacks/rust"]
 
+[processes]
+  app = "./voicebbs"
+
 kill_signal = "SIGINT"
 kill_timeout = 5
 
