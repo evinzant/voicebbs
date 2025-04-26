@@ -1,6 +1,5 @@
 use warp::Filter;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UdpSocket;
 use tokio::task;
 
 #[tokio::main]
@@ -22,37 +21,30 @@ async fn main() {
 }
 
 async fn run_sip_server() {
-    // Bind TCP listener to port 5060
-    let listener = TcpListener::bind("0.0.0.0:5060")
+    let socket = UdpSocket::bind("0.0.0.0:5060")
         .await
-        .expect("Failed to bind to TCP 5060");
+        .expect("Failed to bind to UDP 5060");
 
-    println!("SIP Server is listening on TCP 5060...");
+    println!("SIP Server is listening on UDP 5060...");
+
+    let mut buf = [0u8; 2048];
 
     loop {
-        match listener.accept().await {
-            Ok((mut socket, addr)) => {
-                println!("Accepted connection from {}", addr);
+        match socket.recv_from(&mut buf).await {
+            Ok((size, addr)) => {
+                let data = &buf[..size];
+                let message = String::from_utf8_lossy(data);
 
-                let mut buf = [0u8; 4096];
-                match socket.read(&mut buf).await {
-                    Ok(size) => {
-                        let request = String::from_utf8_lossy(&buf[..size]);
-                        println!("Received from {}: {}", addr, request);
+                println!("Received from {}: {}", addr, message);
 
-                        if request.contains("INVITE") {
-                            let response = build_basic_sip_response(&request);
-                            let _ = socket.write_all(response.as_bytes()).await;
-                            println!("Sent 200 OK to {}", addr);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("TCP read error: {}", e);
-                    }
+                if message.contains("INVITE") {
+                    let response = build_basic_sip_response(&message);
+                    let _ = socket.send_to(response.as_bytes(), &addr).await;
+                    println!("Sent 200 OK to {}", addr);
                 }
             }
             Err(e) => {
-                eprintln!("TCP accept error: {}", e);
+                eprintln!("UDP receive error: {}", e);
             }
         }
     }
@@ -66,7 +58,7 @@ fn build_basic_sip_response(invite: &str) -> String {
 
     format!(
         "SIP/2.0 200 OK\r\n\
-         Via: SIP/2.0/TCP yourdomain.com;branch=z9hG4bK776asdhds\r\n\
+         Via: SIP/2.0/UDP yourdomain.com;branch=z9hG4bK776asdhds\r\n\
          From: {}\r\n\
          To: {}\r\n\
          Call-ID: {}\r\n\
