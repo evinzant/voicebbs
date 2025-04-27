@@ -1,3 +1,50 @@
+#[derive(Debug)]
+struct RtpHeader {
+    version: u8,
+    padding: bool,
+    extension: bool,
+    csrc_count: u8,
+    marker: bool,
+    payload_type: u8,
+    sequence_number: u16,
+    timestamp: u32,
+    ssrc: u32,
+}
+
+impl RtpHeader {
+    fn new(sequence_number: u16, timestamp: u32, ssrc: u32) -> Self {
+        RtpHeader {
+            version: 2,
+            padding: false,
+            extension: false,
+            csrc_count: 0,
+            marker: false,
+            payload_type: 0, // Payload type 0 = PCMU (G.711 µ-Law); we can adjust later if needed
+            sequence_number,
+            timestamp,
+            ssrc,
+        }
+    }
+
+    fn build(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(12);
+
+        let b0 = (self.version << 6)
+            | ((self.padding as u8) << 5)
+            | ((self.extension as u8) << 4)
+            | (self.csrc_count & 0x0F);
+        buf.push(b0);
+
+        let b1 = ((self.marker as u8) << 7) | (self.payload_type & 0x7F);
+        buf.push(b1);
+
+        buf.extend_from_slice(&self.sequence_number.to_be_bytes());
+        buf.extend_from_slice(&self.timestamp.to_be_bytes());
+        buf.extend_from_slice(&self.ssrc.to_be_bytes());
+
+        buf
+    }
+}
 use std::net::UdpSocket;
 use std::fs::File;
 use std::io::Read;
