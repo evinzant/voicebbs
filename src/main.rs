@@ -25,7 +25,7 @@ impl RtpHeader {
             extension: false,
             csrc_count: 0,
             marker: false,
-            payload_type: 101, // <<<<<< FIXED HERE (dynamic payload type, matches SignalWire)
+            payload_type: 0, // Payload type 0 = PCMU (standard for G.711 µ-Law)
             sequence_number,
             timestamp,
             ssrc,
@@ -64,27 +64,52 @@ fn main() -> std::io::Result<()> {
         if received.contains("INVITE") {
             println!("Received INVITE from: {}", src);
 
-            // Send 200 OK
-            let response = "SIP/2.0 200 OK\r\n\r\n";
-            socket.send_to(response.as_bytes(), &src)?;
-            println!("Sent 200 OK");
+            // --- Prepare 200 OK with SDP ---
+            let your_ip = "YOUR_PUBLIC_IP_HERE"; // <-- Replace this with your VPS public IP address!
 
-            // Sleep briefly to simulate call setup
+            let sdp = format!(
+                "v=0\r\n\
+                o=- 0 0 IN IP4 {ip}\r\n\
+                s=VoiceBBS\r\n\
+                c=IN IP4 {ip}\r\n\
+                t=0 0\r\n\
+                m=audio 8000 RTP/AVP 0\r\n\
+                a=rtpmap:0 PCMU/8000\r\n",
+                ip=your_ip
+            );
+
+            let response = format!(
+                "SIP/2.0 200 OK\r\n\
+                Via: SIP/2.0/UDP {src}\r\n\
+                Contact: <sip:{ip}:5060>\r\n\
+                Content-Type: application/sdp\r\n\
+                Content-Length: {}\r\n\
+                \r\n\
+                {}",
+                sdp.len(),
+                sdp,
+                ip=your_ip,
+                src=src.ip()
+            );
+
+            socket.send_to(response.as_bytes(), &src)?;
+            println!("Sent 200 OK with SDP");
+
+            // --- Wait for ACK (not strictly needed but polite) ---
             thread::sleep(Duration::from_millis(500));
 
-            // Open the WAV file
+            // --- Now send the audio (meatbag.wav) ---
+
             let mut file = File::open("meatbag.wav")?;
             let mut wav_data = Vec::new();
             file.read_to_end(&mut wav_data)?;
 
             println!("Sending audio...");
 
-            // RTP state
             let mut sequence_number = 0u16;
             let mut timestamp = 0u32;
-            let ssrc = 0x12345678; // Random SSRC
+            let ssrc = 0x12345678;
 
-            // Stream WAV data in 20ms chunks (~160 bytes at 8kHz)
             for chunk in wav_data.chunks(160) {
                 let header = RtpHeader::new(sequence_number, timestamp, ssrc);
                 let mut packet = header.build();
@@ -93,14 +118,14 @@ fn main() -> std::io::Result<()> {
                 socket.send_to(&packet, &src)?;
 
                 sequence_number = sequence_number.wrapping_add(1);
-                timestamp = timestamp.wrapping_add(160); // 160 samples = 20ms at 8000Hz
+                timestamp = timestamp.wrapping_add(160);
 
                 thread::sleep(Duration::from_millis(20));
             }
 
             println!("Finished sending audio.");
 
-            // After sending, send BYE
+            // --- Cleanly send BYE ---
             let bye = "BYE sip:voicebbs@client SIP/2.0\r\n\r\n";
             socket.send_to(bye.as_bytes(), &src)?;
             println!("Sent BYE to {}", src);
