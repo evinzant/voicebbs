@@ -25,7 +25,7 @@ impl RtpHeader {
             extension: false,
             csrc_count: 0,
             marker: false,
-            payload_type: 0, // Payload type 0 = PCMU (G.711 u-Law)
+            payload_type: 101, // <<<<<< FIXED HERE (dynamic payload type, matches SignalWire)
             sequence_number,
             timestamp,
             ssrc,
