@@ -1,3 +1,9 @@
+use std::net::UdpSocket;
+use std::fs::File;
+use std::io::Read;
+use std::thread;
+use std::time::Duration;
+
 #[derive(Debug)]
 struct RtpHeader {
     version: u8,
@@ -19,7 +25,7 @@ impl RtpHeader {
             extension: false,
             csrc_count: 0,
             marker: false,
-            payload_type: 0, // Payload type 0 = PCMU (G.711 µ-Law); we can adjust later if needed
+            payload_type: 0, // Payload type 0 = PCMU (G.711 u-Law)
             sequence_number,
             timestamp,
             ssrc,
@@ -45,11 +51,6 @@ impl RtpHeader {
         buf
     }
 }
-use std::net::UdpSocket;
-use std::fs::File;
-use std::io::Read;
-use std::thread;
-use std::time::Duration;
 
 fn main() -> std::io::Result<()> {
     let socket = UdpSocket::bind("0.0.0.0:5060")?;
@@ -78,10 +79,22 @@ fn main() -> std::io::Result<()> {
 
             println!("Sending audio...");
 
-            // "Stream" WAV data — simulate sending via RTP
-            // In reality, RTP headers should be here, but for testing, we just blast raw audio
-            for chunk in wav_data.chunks(160) { // 20ms @ 8kHz PCM
-                socket.send_to(chunk, &src)?;
+            // RTP state
+            let mut sequence_number = 0u16;
+            let mut timestamp = 0u32;
+            let ssrc = 0x12345678; // Random SSRC
+
+            // Stream WAV data in 20ms chunks (~160 bytes at 8kHz)
+            for chunk in wav_data.chunks(160) {
+                let header = RtpHeader::new(sequence_number, timestamp, ssrc);
+                let mut packet = header.build();
+                packet.extend_from_slice(chunk);
+
+                socket.send_to(&packet, &src)?;
+
+                sequence_number = sequence_number.wrapping_add(1);
+                timestamp = timestamp.wrapping_add(160); // 160 samples = 20ms at 8000Hz
+
                 thread::sleep(Duration::from_millis(20));
             }
 
