@@ -25,7 +25,7 @@ impl RtpHeader {
             extension: false,
             csrc_count: 0,
             marker: false,
-            payload_type: 0, // Payload type 0 = PCMU (standard for G.711 µ-Law)
+            payload_type: 8, // Payload type 0 = PCMU (standard for G.711 µ-Law)
             sequence_number,
             timestamp,
             ssrc,
