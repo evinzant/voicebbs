@@ -4,6 +4,9 @@ use std::io::Read;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use log::{info, warn, error, debug};
+use env_logger;
+
 #[derive(Debug)]
 struct RtpHeader {
     version: u8,
@@ -53,8 +56,10 @@ impl RtpHeader {
 }
 
 fn main() -> std::io::Result<()> {
+    env_logger::init();
+
     let socket = UdpSocket::bind("0.0.0.0:5060")?;
-    println!("VoiceBBS SIP server listening on UDP 5060");
+    info!("VoiceBBS SIP server listening on UDP 5060");
 
     loop {
         let mut buf = [0; 1500];
@@ -62,7 +67,7 @@ fn main() -> std::io::Result<()> {
         let received = String::from_utf8_lossy(&buf[..amt]);
 
         if received.contains("INVITE") {
-            println!("Received INVITE from: {}", src);
+            info!("Received INVITE from: {}", src);
 
             // --- Prepare 200 OK with SDP ---
             let your_ip = "155.138.203.121"; // Replace with your VPS public IP
@@ -98,10 +103,10 @@ Session-Expires: 1800;refresher=uac\r\n\
             );
 
             socket.send_to(response.as_bytes(), &src)?;
-            println!("Sent 200 OK with SDP");
+            info!("Sent 200 OK with SDP");
 
             // --- Wait for SIP ACK ---
-            println!("Waiting for ACK from {}", src);
+            info!("Waiting for ACK from {}", src);
             let mut ack_received = false;
             let start_time = Instant::now();
 
@@ -114,7 +119,7 @@ Session-Expires: 1800;refresher=uac\r\n\
                         if ack_src.ip() == src.ip() {
                             let ack_msg = String::from_utf8_lossy(&ack_buf[..ack_amt]);
                             if ack_msg.contains("ACK") {
-                                println!("Received ACK from {}", ack_src);
+                                info!("Received ACK from {}", ack_src);
                                 ack_received = true;
 
                                 // RESET TIMEOUT after ACK
@@ -129,14 +134,14 @@ Session-Expires: 1800;refresher=uac\r\n\
                         continue;
                     }
                     Err(e) => {
-                        eprintln!("Error receiving ACK: {}", e);
+                        error!("Error receiving ACK: {}", e);
                         break;
                     }
                 }
             }
 
             if !ack_received {
-                println!("WARNING: No ACK received, skipping sending audio!");
+                warn!("No ACK received, skipping sending audio!");
                 // RESET TIMEOUT in case of failure
                 socket.set_read_timeout(None)?;
                 continue; // Skip this call if no ACK
@@ -147,7 +152,7 @@ Session-Expires: 1800;refresher=uac\r\n\
             let mut wav_data = Vec::new();
             file.read_to_end(&mut wav_data)?;
 
-            println!("Sending audio...");
+            info!("Sending audio...");
 
             let mut sequence_number = 0u16;
             let mut timestamp = 0u32;
@@ -166,12 +171,12 @@ Session-Expires: 1800;refresher=uac\r\n\
                 thread::sleep(Duration::from_millis(20));
             }
 
-            println!("Finished sending audio.");
+            info!("Finished sending audio.");
 
             // --- Send SIP BYE cleanly ---
             let bye = "BYE sip:voicebbs@client SIP/2.0\r\n\r\n";
             socket.send_to(bye.as_bytes(), &src)?;
-            println!("Sent BYE to {}", src);
+            info!("Sent BYE to {}", src);
         }
     }
 }
