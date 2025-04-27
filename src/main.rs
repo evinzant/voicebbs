@@ -1,79 +1,49 @@
-use warp::Filter;
-use tokio::net::UdpSocket;
-use tokio::task;
+use std::net::UdpSocket;
+use std::fs::File;
+use std::io::Read;
+use std::thread;
+use std::time::Duration;
 
-#[tokio::main]
-async fn main() {
-    println!("VoiceBBS Server is starting...");
-
-    // Spawn SIP server in a separate task
-    task::spawn(async {
-        run_sip_server().await;
-    });
-
-    // Warp HTTP server (already working)
-    let hello = warp::path::end()
-        .map(|| warp::reply::html("VoiceBBS is alive!"));
-
-    warp::serve(hello)
-        .run(([0, 0, 0, 0], 8080))
-        .await;
-}
-
-async fn run_sip_server() {
-    let socket = UdpSocket::bind("0.0.0.0:5060")
-        .await
-        .expect("Failed to bind to UDP 5060");
-
-    println!("SIP Server is listening on UDP 5060...");
-
-    let mut buf = [0u8; 2048];
+fn main() -> std::io::Result<()> {
+    let socket = UdpSocket::bind("0.0.0.0:5060")?;
+    println!("VoiceBBS SIP server listening on UDP 5060");
 
     loop {
-        match socket.recv_from(&mut buf).await {
-            Ok((size, addr)) => {
-                let data = &buf[..size];
-                let message = String::from_utf8_lossy(data);
+        let mut buf = [0; 1500];
+        let (amt, src) = socket.recv_from(&mut buf)?;
+        let received = String::from_utf8_lossy(&buf[..amt]);
 
-                println!("Received from {}: {}", addr, message);
+        if received.contains("INVITE") {
+            println!("Received INVITE from: {}", src);
 
-                if message.contains("INVITE") {
-                    let response = build_basic_sip_response(&message);
-                    let _ = socket.send_to(response.as_bytes(), &addr).await;
-                    println!("Sent 200 OK to {}", addr);
-                }
+            // Send 200 OK
+            let response = "SIP/2.0 200 OK\r\n\r\n";
+            socket.send_to(response.as_bytes(), &src)?;
+            println!("Sent 200 OK");
+
+            // Sleep briefly to simulate call setup
+            thread::sleep(Duration::from_millis(500));
+
+            // Open the WAV file
+            let mut file = File::open("meatbag.wav")?;
+            let mut wav_data = Vec::new();
+            file.read_to_end(&mut wav_data)?;
+
+            println!("Sending audio...");
+
+            // "Stream" WAV data — simulate sending via RTP
+            // In reality, RTP headers should be here, but for testing, we just blast raw audio
+            for chunk in wav_data.chunks(160) { // 20ms @ 8kHz PCM
+                socket.send_to(chunk, &src)?;
+                thread::sleep(Duration::from_millis(20));
             }
-            Err(e) => {
-                eprintln!("UDP receive error: {}", e);
-            }
+
+            println!("Finished sending audio.");
+
+            // After sending, send BYE
+            let bye = "BYE sip:voicebbs@client SIP/2.0\r\n\r\n";
+            socket.send_to(bye.as_bytes(), &src)?;
+            println!("Sent BYE to {}", src);
         }
     }
-}
-
-fn build_basic_sip_response(invite: &str) -> String {
-    let call_id = find_header(invite, "Call-ID").unwrap_or("random1234");
-    let cseq = find_header(invite, "CSeq").unwrap_or("1 INVITE");
-    let from = find_header(invite, "From").unwrap_or("<sip:unknown>");
-    let to = find_header(invite, "To").unwrap_or("<sip:unknown>");
-
-    format!(
-        "SIP/2.0 200 OK\r\n\
-         Via: SIP/2.0/UDP yourdomain.com;branch=z9hG4bK776asdhds\r\n\
-         From: {}\r\n\
-         To: {}\r\n\
-         Call-ID: {}\r\n\
-         CSeq: {}\r\n\
-         Content-Length: 0\r\n\
-         \r\n",
-        from, to, call_id, cseq
-    )
-}
-
-fn find_header<'a>(sip_message: &'a str, header: &str) -> Option<&'a str> {
-    for line in sip_message.lines() {
-        if line.starts_with(header) {
-            return Some(line.trim());
-        }
-    }
-    None
 }
