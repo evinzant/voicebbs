@@ -2,7 +2,7 @@ use std::net::UdpSocket;
 use std::fs::File;
 use std::io::Read;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Debug)]
 struct RtpHeader {
@@ -65,36 +65,36 @@ fn main() -> std::io::Result<()> {
             println!("Received INVITE from: {}", src);
 
             // --- Prepare 200 OK with SDP ---
-            let your_ip = "155.138.203.121"; // <<< Your VPS public IP here!
+            let your_ip = "155.138.203.121"; // Replace with your VPS public IP
 
             let sdp = format!(
                 "v=0\r\n\
-                o=- 0 0 IN IP4 {ip}\r\n\
-                s=VoiceBBS\r\n\
-                c=IN IP4 {ip}\r\n\
-                t=0 0\r\n\
-                m=audio 8000 RTP/AVP 0 101\r\n\
-                a=rtpmap:0 PCMU/8000\r\n\
-                a=rtpmap:101 telephone-event/8000\r\n\
-                a=fmtp:101 0-15\r\n",
-                ip=your_ip
+o=- 0 0 IN IP4 {ip}\r\n\
+s=VoiceBBS\r\n\
+c=IN IP4 {ip}\r\n\
+t=0 0\r\n\
+m=audio 8000 RTP/AVP 0 101\r\n\
+a=rtpmap:0 PCMU/8000\r\n\
+a=rtpmap:101 telephone-event/8000\r\n\
+a=fmtp:101 0-15\r\n",
+                ip = your_ip
             );
 
             let response = format!(
                 "SIP/2.0 200 OK\r\n\
-                Via: SIP/2.0/UDP {src}\r\n\
-                Contact: <sip:{ip}:5060>\r\n\
-                Content-Type: application/sdp\r\n\
-                Content-Length: {}\r\n\
-                Allow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n\
-                Supported: timer\r\n\
-                Session-Expires: 1800;refresher=uac\r\n\
-                \r\n\
-                {}",
+Via: SIP/2.0/UDP {src}\r\n\
+Contact: <sip:{ip}:5060>\r\n\
+Content-Type: application/sdp\r\n\
+Content-Length: {}\r\n\
+Allow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n\
+Supported: timer\r\n\
+Session-Expires: 1800;refresher=uac\r\n\
+\r\n\
+{}",
                 sdp.len(),
                 sdp,
-                ip=your_ip,
-                src=src.ip()
+                ip = your_ip,
+                src = src.ip()
             );
 
             socket.send_to(response.as_bytes(), &src)?;
@@ -103,25 +103,42 @@ fn main() -> std::io::Result<()> {
             // --- Wait for SIP ACK ---
             println!("Waiting for ACK from {}", src);
             let mut ack_received = false;
-            let start_time = std::time::Instant::now();
+            let start_time = Instant::now();
+
+            socket.set_read_timeout(Some(Duration::from_secs(1)))?;
 
             while start_time.elapsed() < Duration::from_secs(5) {
                 let mut ack_buf = [0; 1500];
-                socket.set_read_timeout(Some(Duration::from_secs(1)))?;
-                if let Ok((ack_amt, ack_src)) = socket.recv_from(&mut ack_buf) {
-                    if ack_src.ip() == src.ip() {
-                        let ack_msg = String::from_utf8_lossy(&ack_buf[..ack_amt]);
-                        if ack_msg.contains("ACK") {
-                            println!("Received ACK from {}", ack_src);
-                            ack_received = true;
-                            break;
+                match socket.recv_from(&mut ack_buf) {
+                    Ok((ack_amt, ack_src)) => {
+                        if ack_src.ip() == src.ip() {
+                            let ack_msg = String::from_utf8_lossy(&ack_buf[..ack_amt]);
+                            if ack_msg.contains("ACK") {
+                                println!("Received ACK from {}", ack_src);
+                                ack_received = true;
+
+                                // RESET TIMEOUT after ACK
+                                socket.set_read_timeout(None)?;
+
+                                break;
+                            }
                         }
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        // Timeout occurred, continue waiting
+                        continue;
+                    }
+                    Err(e) => {
+                        eprintln!("Error receiving ACK: {}", e);
+                        break;
                     }
                 }
             }
 
             if !ack_received {
                 println!("WARNING: No ACK received, skipping sending audio!");
+                // RESET TIMEOUT in case of failure
+                socket.set_read_timeout(None)?;
                 continue; // Skip this call if no ACK
             }
 
