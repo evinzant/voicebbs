@@ -25,7 +25,7 @@ impl RtpHeader {
             extension: false,
             csrc_count: 0,
             marker: false,
-            payload_type: 0, // <<<<<< BACK TO 0 = PCMU (G.711 μ-law)
+            payload_type: 0, // G.711 μ-law (PCMU)
             sequence_number,
             timestamp,
             ssrc,
@@ -65,7 +65,7 @@ fn main() -> std::io::Result<()> {
             println!("Received INVITE from: {}", src);
 
             // --- Prepare 200 OK with SDP ---
-            let your_ip = "155.138.203.121"; // <<< YOUR VPS PUBLIC IP here
+            let your_ip = "155.138.203.121"; // <<< Your VPS public IP here!
 
             let sdp = format!(
                 "v=0\r\n\
@@ -101,10 +101,31 @@ fn main() -> std::io::Result<()> {
             println!("Sent 200 OK with SDP");
 
             // --- Wait for SIP ACK ---
-            thread::sleep(Duration::from_millis(1500));
+            println!("Waiting for ACK from {}", src);
+            let mut ack_received = false;
+            let start_time = std::time::Instant::now();
+
+            while start_time.elapsed() < Duration::from_secs(5) {
+                let mut ack_buf = [0; 1500];
+                socket.set_read_timeout(Some(Duration::from_secs(1)))?;
+                if let Ok((ack_amt, ack_src)) = socket.recv_from(&mut ack_buf) {
+                    if ack_src.ip() == src.ip() {
+                        let ack_msg = String::from_utf8_lossy(&ack_buf[..ack_amt]);
+                        if ack_msg.contains("ACK") {
+                            println!("Received ACK from {}", ack_src);
+                            ack_received = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if !ack_received {
+                println!("WARNING: No ACK received, skipping sending audio!");
+                continue; // Skip this call if no ACK
+            }
 
             // --- Now send the audio (meatbag.wav) ---
-
             let mut file = File::open("meatbag.wav")?;
             let mut wav_data = Vec::new();
             file.read_to_end(&mut wav_data)?;
