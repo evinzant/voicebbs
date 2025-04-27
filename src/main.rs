@@ -25,7 +25,7 @@ impl RtpHeader {
             extension: false,
             csrc_count: 0,
             marker: false,
-            payload_type: 8, // Payload type 0 = PCMU (standard for G.711 µ-Law)
+            payload_type: 8, // <<< FIXED: PCMA (A-Law) Payload Type 8
             sequence_number,
             timestamp,
             ssrc,
@@ -65,7 +65,7 @@ fn main() -> std::io::Result<()> {
             println!("Received INVITE from: {}", src);
 
             // --- Prepare 200 OK with SDP ---
-            let your_ip = "YOUR_PUBLIC_IP_HERE"; // <-- Replace this with your VPS public IP address!
+            let your_ip = "155.138.203.121"; // <<< YOUR VPS PUBLIC IP HERE!
 
             let sdp = format!(
                 "v=0\r\n\
@@ -73,8 +73,8 @@ fn main() -> std::io::Result<()> {
                 s=VoiceBBS\r\n\
                 c=IN IP4 {ip}\r\n\
                 t=0 0\r\n\
-                m=audio 8000 RTP/AVP 0\r\n\
-                a=rtpmap:0 PCMU/8000\r\n",
+                m=audio 8000 RTP/AVP 8\r\n\
+                a=rtpmap:8 PCMA/8000\r\n",
                 ip=your_ip
             );
 
@@ -95,8 +95,8 @@ fn main() -> std::io::Result<()> {
             socket.send_to(response.as_bytes(), &src)?;
             println!("Sent 200 OK with SDP");
 
-            // --- Wait for ACK (not strictly needed but polite) ---
-            thread::sleep(Duration::from_millis(500));
+            // --- NEW: Wait longer to receive ACK ---
+            thread::sleep(Duration::from_millis(1500));
 
             // --- Now send the audio (meatbag.wav) ---
 
